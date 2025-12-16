@@ -13,6 +13,7 @@
 default_users=(<user1> <user2>)
 default_groups=(<group1> <group2>)
 pass_user1='<password_hash>'
+ssh_port=<port>
 
 # Iniciar com permissoes elevadas
 if [[ $EUID != 0 ]]; then
@@ -36,7 +37,7 @@ for i in ${default_users[@]}; do grep -q "^${i}:" /etc/passwd || useradd -m $i; 
 for i in ${default_users[@]}; do grep -qE "^${i}:${pass_user1}:" /etc/shadow || sed -ri "s/^(user1:)[^:]+/\\1${pass_user1}/" /etc/shadow
 usermod -s /bin/bash -g <user1> -G group1,group2 user1
 
-# Adicionar conta funcional e grupo n3 ao sudoers
+# Adicionar conta funcional e grupos admin ao sudoers
 for i in '%<group1>' '<group2>'; do grep -qE "^\s+?${i}\s+ALL=\(ALL\)\s+NOPASSWD:\s+ALL" /etc/sudoers || echo -e "${i}\tALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers; done
 
 echo "Padronizando o ambiente Linux TJ..."
@@ -58,7 +59,7 @@ for i in $(find /var/log/users_historylogs/ -name history-*); do
 done
 
 # Copiar o arquivo aliasGeral
-aliasDir='/usr/local/dcon/confs/alias.d'
+aliasDir='/usr/local/confs/alias.d'
 if [[ ! -d ${aliasDir} ]]; then mkdir -p ${aliasDir}; fi
 if [[ -e ${aliasDir}/aliasGeral ]] && [[ "$(md5sum linux/aliasGeral | awk '{print $1}')" != "$(md5sum ${aliasDir}/aliasGeral | awk '{print $1}')" ]]; then
         mv ${aliasDir}/aliasGeral ${aliasDir}/aliasGeral-$(date +%y%m%d)
@@ -75,22 +76,21 @@ chmod 444 /etc/profile
 
 echo "Padronizando o SSH..."
 # Alterar a porta do SSH
-if ! grep -q '^Port 12235$' /etc/ssh/sshd_config; then
-        sed -ri 's/^#?Port 22$/Port 12235/' /etc/ssh/sshd_config
-        semanage port -a -t ssh_port_t -p tcp 12235
+if ! grep -q "^Port ${ssh_port}$" /etc/ssh/sshd_config; then
+        sed -ri "s/^#?Port 22$/Port ${ssh_port}/" /etc/ssh/sshd_config
+        semanage port -a -t ssh_port_t -p tcp ${ssh_port}
         systemctl restart sshd
 fi
 
-# Liberar a porta 12235 no firewall
+# Liberar a porta SSH no firewall
 if type firewall-cmd >/dev/null 2>&1; then
-        if firewall-cmd --add-port=12235/tcp --permanent >/dev/null 2>&1; then
+        if firewall-cmd --add-port=${ssh_port}/tcp --permanent >/dev/null 2>&1; then
                 firewall-cmd --reload >/dev/null 2>&1
         else
-                firewall-offline-cmd --add-port=12235/tcp --permanent >/dev/null 2>&1
+                firewall-offline-cmd --add-port=${ssh_port}/tcp --permanent >/dev/null 2>&1
         fi
 fi
 
-# Instalar Trend
-echo "Instalando Trend..."
-cd trend
-./Deploy_DeepSecurity_Linux.sh
+# Instalar EDRs
+echo "Instalando EDRs..."
+./Deploy_EDR.sh
